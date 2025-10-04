@@ -1,0 +1,80 @@
+
+# Argo CI Pipeline Chart: Quick Start & Developer Guide
+
+## 🚀 What does this chart do?
+This Helm chart deploys an [Argo Workflow](https://argoproj.github.io/argo-workflows/) that clones a repo, builds a Docker image, and (optionally) runs tests. It is designed for CI/CD pipelines that build and test container images.
+
+---
+
+## 🏁 Quick Start
+
+1. **Install Argo Workflows** (if not already):
+   https://argo-workflows.readthedocs.io/en/stable/quick-start/
+
+2. **Install this chart:**
+   ```sh
+   helm install my-ci-pipeline . 
+   # or upgrade:
+   helm upgrade --install my-ci-pipeline .
+   ```
+
+3. **Trigger a workflow:**
+   ```sh
+   kubectl create -f <(helm template my-ci-pipeline .)
+   # or use Argo CLI:
+   argo submit -n {{ .Values.pipeline.namespace }} <(helm template my-ci-pipeline .)
+   ```
+
+---
+
+## 🔧 Configuration
+
+Key values in `values.yaml`:
+
+| Value | Description |
+|-------|-------------|
+| `pipeline.name` | Name of the workflow |
+| `pipeline.namespace` | Namespace to run in |
+| `pipeline.repo` | GitHub repo to clone (e.g. `callrail/promptus`) |
+| `pipeline.build.image` | Builder image (default: moby/buildkit) |
+| `pipeline.build.output` | Output image name |
+| `pipeline.spec.command` | Test/build command to run |
+
+---
+
+## 🐳 How to see your built image
+
+The workflow will build and push an image to the registry defined in `pipeline.build.output`.
+
+Check the Argo UI or run:
+```sh
+argo get -n {{ .Values.pipeline.namespace }} $(argo list -n {{ .Values.pipeline.namespace }} | grep {{ .Values.pipeline.name }} | head -1 | awk '{print $1}')
+```
+
+---
+
+## 🧪 How to run tests
+
+The test step is defined in `pipeline.spec.command` in your `values.yaml`.
+
+---
+
+## 🛠️ Troubleshooting
+
+- **Workflow stuck?** Check pod logs:
+  ```sh
+  kubectl get pods -n {{ .Values.pipeline.namespace }}
+  kubectl logs <pod-name> -n {{ .Values.pipeline.namespace }}
+  ```
+- **Image not building?** Check the buildkit step logs in Argo UI.
+- **Secrets:** Make sure `git-ssh-key`, `github-token-secret`, and `sidekiqpro-auth-secret` exist in the namespace.
+
+---
+
+## 📚 Resources
+- [Argo Workflows Docs](https://argoproj.github.io/argo-workflows/)
+- [Helm Docs](https://helm.sh/docs/)
+
+---
+
+Happy shipping! 🚢

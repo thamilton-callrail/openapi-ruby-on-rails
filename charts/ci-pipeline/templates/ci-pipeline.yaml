@@ -1,0 +1,84 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: {{ .Values.pipeline.name }}
+  namespace: {{ .Values.pipeline.namespace }}
+spec:
+  entrypoint: {{ .Values.pipeline.name }}
+  serviceAccountName: argo
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+        generateName: ci-workspace-
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+  volumes:
+    - name: git-ssh-key
+      secret:
+        secretName: git-ssh-key
+        defaultMode: 0400
+  templates:
+    - name: {{ .Values.pipeline.name }}
+      steps:
+        - - name: clone
+            template: git-clone
+        - - name: build
+            template: buildkit-build
+        # test step is now handled at the spec level
+    - name: git-clone
+      container:
+        image: alpine/git:latest
+        command: [sh, -c]
+        args:
+          - |
+            git clone --depth 1 https://github.com/thamilton-callrail/{{ .Values.pipeline.name }}.git /workspace && \
+            ls -l /workspace
+            chmod -R 777 /workspace
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+    - name: buildkit-build
+      container:
+        image: moby/buildkit:v0.24.0
+        command:
+          - sh
+          - -c
+        args:
+        - |
+          buildctl-daemonless.sh build \
+            --frontend=dockerfile.v0 \
+            --local=context=/workspace \
+            --local=dockerfile=/workspace \
+            --output=type=image,name=ghcr.io/$GHCR_USERNAME/{{ .Values.pipeline.name }}:latest,push=true,registry.insecure=false
+        env:
+          - name: DOCKER_CONFIG
+            value: /root/.docker/
+          - name: GHCR_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: ghcr-secret
+                key: username
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: docker-config
+            mountPath: /root/.docker/
+            readOnly: true
+        securityContext:
+          privileged: true
+      volumes:
+        - name: docker-config
+          secret:
+            secretName: docker-config
+  test:
+    workingDir: /workspace
+    command: [sh, -c]
+    args:
+      - |
+        {{ .Values.pipeline.spec.command }}
+    volumeMounts:
+      - name: workspace
+        mountPath: /workspace

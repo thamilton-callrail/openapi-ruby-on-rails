@@ -1,0 +1,5 @@
+pipeline:
+  name: openapi-ruby-on-rails
+  namespace: argo
+  spec:
+    command: bundle install && rake spec
