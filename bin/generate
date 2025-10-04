@@ -1,0 +1,34 @@
+#!/bin/bash
+# bin/generate
+# Generate Rails API and models from openapi.yaml using openapi-generator-cli
+
+set -e
+
+OPENAPI_FILE="$(dirname "$0")/../openapi.yaml"
+RAILS_ROOT="$(dirname "$0")/.."
+OUTPUT_DIR="$RAILS_ROOT"
+
+if [ ! -f "$OPENAPI_FILE" ]; then
+  echo "openapi.yaml not found at $OPENAPI_FILE"
+  exit 1
+fi
+
+if ! command -v openapi-generator >/dev/null 2>&1; then
+  echo "openapi-generator not found. Install with: brew install openapi-generator"
+  exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+openapi-generator generate \
+  -i "$OPENAPI_FILE" \
+  -g ruby-on-rails \
+  -o "$OUTPUT_DIR"
+#   --global-property apiPackage=Generated::Api,modelPackage=Generated::Models,models,apis
+
+if [ $? -eq 0 ]; then
+  echo "API and models generated in $OUTPUT_DIR"
+else
+  echo "Error generating code."
+  exit 1
+fi

@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: Base Template API
+  version: 1.0.0
+  description: A simple API template with a health check endpoint
+servers:
+  - url: http://localhost:3000
+paths:
+  /health-check:
+    get:
+      tags:
+        - health-check
+      summary: A simple health check endpoint
+      description: Returns a 200 OK status to indicate the service is running
+      operationId: healthcheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+components:
+  schemas:
+    HealthCheckResponse:
+      type: object
+      properties:
+        service:
+          type: string
+          example: "The name of the service"
+        postgresql:
+          type: string
+          example: "ok"
+        redis:
+          type: string
+          example: "ok"
+        status:
+          type: string
+          example: "ok"
+      
