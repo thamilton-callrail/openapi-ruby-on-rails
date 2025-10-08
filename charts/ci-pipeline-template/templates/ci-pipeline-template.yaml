@@ -1,0 +1,396 @@
+# 
+# Rails CI BuildKit Workflow Template
+# This template defines the reusable CI pipeline steps
+#
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: {{ include "ci-pipeline-template.templateName" . }}
+  namespace: {{ include "ci-pipeline-template.templateNamespace" . }}
+  labels:
+    {{- include "ci-pipeline-template.labels" . | nindent 4 }}
+    workflows.argoproj.io/creator: ci-pipeline-template
+  annotations:
+    {{- include "ci-pipeline-template.annotations" . | nindent 4 }}
+spec:
+  arguments:
+    parameters:
+      - name: repo_url
+        value: {{ .Values.template.defaultParameters.repo_url }}
+      - name: branch
+        value: {{ .Values.template.defaultParameters.branch }}
+      - name: dockerfile
+        value: {{ .Values.template.defaultParameters.dockerfile }}
+      - name: context_path
+        value: {{ .Values.template.defaultParameters.context_path }}
+      - name: image_name
+        value: {{ .Values.template.defaultParameters.image_name }}
+      - name: image_tag
+        value: "{{`{{workflow.uid}}`}}"
+      - name: test_command
+        value: {{ .Values.template.defaultParameters.test_command | quote }}
+      - name: github_username
+        value: {{ include "ci-pipeline-template.githubUsername" . }}
+  
+  entrypoint: main
+  
+  # Workflow-level timeouts and cleanup
+  {{- include "ci-pipeline-template.timeouts" . | nindent 2 }}
+  
+  # Shared workspace volume
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+        generateName: rails-ci-workspace-
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ include "ci-pipeline-template.workspaceVolumeSize" . }}
+    - metadata:
+        name: buildkit-cache
+        generateName: buildkit-cache-
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ include "ci-pipeline-template.buildkitCacheVolumeSize" . }}
+
+  # Workflow-level volumes
+  volumes:
+    - name: github-token
+      secret:
+        secretName: {{ include "ci-pipeline-template.githubSecretName" . }}
+
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: verify-token
+            template: verify-github-token
+          
+          - name: clone
+            template: git-clone
+            dependencies: [verify-token]
+            arguments:
+              parameters:
+                - name: repo_url
+                  value: "{{`{{workflow.parameters.repo_url}}`}}"
+                - name: branch
+                  value: "{{`{{workflow.parameters.branch}}`}}"
+          
+          - name: security-scan
+            template: security-scan
+            dependencies: [clone]
+            arguments:
+              parameters:
+                - name: dockerfile
+                  value: "{{`{{workflow.parameters.dockerfile}}`}}"
+          
+          - name: build-image
+            template: buildkit-build
+            dependencies: [clone]
+            arguments:
+              parameters:
+                - name: context_path
+                  value: "{{`{{workflow.parameters.context_path}}`}}"
+                - name: dockerfile
+                  value: "{{`{{workflow.parameters.dockerfile}}`}}"
+                - name: image_name
+                  value: "{{`{{workflow.parameters.image_name}}`}}"
+                - name: image_tag
+                  value: "{{`{{workflow.parameters.image_tag}}`}}"
+                - name: github_username
+                  value: "{{`{{workflow.parameters.github_username}}`}}"
+          
+          - name: test
+            template: run-tests
+            dependencies: [build-image, security-scan]
+            arguments:
+              parameters:
+                - name: image_ref
+                  value: "{{`{{tasks.build-image.outputs.parameters.image-ref}}`}}"
+                - name: test_command
+                  value: "{{`{{workflow.parameters.test_command}}`}}"
+          
+          - name: tag-latest
+            template: tag-as-latest
+            dependencies: [test]
+            arguments:
+              parameters:
+                - name: image_name
+                  value: "{{`{{workflow.parameters.image_name}}`}}"
+                - name: source_tag
+                  value: "{{`{{workflow.parameters.image_tag}}`}}"
+                - name: github_username
+                  value: "{{`{{workflow.parameters.github_username}}`}}"
+
+    - name: verify-github-token
+      container:
+        image: {{ include "ci-pipeline-template.verifyTokenImage" . }}
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -euo pipefail
+            echo "==== Verifying GitHub Token ===="
+            
+            if [ ! -f /github-token/token ]; then
+              echo "ERROR: GitHub token file not found!"
+              exit 1
+            fi
+            
+            TOKEN=$(cat /github-token/token)
+            echo "Token length: ${#TOKEN} characters"
+            
+            if [ ${#TOKEN} -lt 30 ]; then
+              echo "ERROR: GitHub token seems too short."
+              exit 1
+            fi
+            
+            # Test GitHub API access
+            RESPONSE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/user)
+            
+            if [ "$RESPONSE" != "200" ]; then
+              echo "ERROR: GitHub API returned status $RESPONSE"
+              cat /tmp/response.json || true
+              exit 1
+            fi
+            
+            # Check scopes
+            SCOPES=$(curl -s -I -H "Authorization: Bearer $TOKEN" https://api.github.com/user | grep -i "x-oauth-scopes:" || echo "")
+            echo "Token scopes: $SCOPES"
+            
+            if ! echo "$SCOPES" | grep -q "write:packages"; then
+              echo "WARNING: Token may be missing 'write:packages' scope for GHCR push"
+            fi
+            
+            echo "GitHub token verification completed ✅"
+        volumeMounts:
+          - name: github-token
+            mountPath: /github-token
+            readOnly: true
+        {{- include "ci-pipeline-template.verifyTokenResources" . | nindent 8 }}
+
+    - name: git-clone
+      inputs:
+        parameters:
+          - name: repo_url
+          - name: branch
+      container:
+        image: {{ include "ci-pipeline-template.gitCloneImage" . }}
+        workingDir: /workspace
+        command: [sh, -c]
+        args:
+          - |
+            set -euo pipefail
+            echo "==== Cloning Repository ===="
+            
+            # Shallow clone for faster performance
+            git clone \
+              --depth 1 \
+              --branch "{{`{{inputs.parameters.branch}}`}}" \
+              --single-branch \
+              "{{`{{inputs.parameters.repo_url}}`}}" \
+              .
+            
+            echo "Repository cloned successfully"
+            echo "Git commit: $(git rev-parse HEAD)"
+            echo "Files in workspace:"
+            ls -la
+            
+            # Set proper permissions
+            chmod -R 755 .
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        {{- include "ci-pipeline-template.gitCloneResources" . | nindent 8 }}
+
+    - name: security-scan
+      inputs:
+        parameters:
+          - name: dockerfile
+      container:
+        image: {{ include "ci-pipeline-template.securityScanImage" . }}
+        workingDir: /workspace
+        command: [sh, -c]
+        args:
+          - |
+            set -euo pipefail
+            echo "==== Running Security Scan ===="
+            
+            # Lint Dockerfile
+            echo "Linting {{`{{inputs.parameters.dockerfile}}`}}..."
+            hadolint "{{`{{inputs.parameters.dockerfile}}`}}" || echo "Dockerfile linting completed with warnings"
+            
+            # Basic security checks
+            echo "Checking for potential secrets in code..."
+            if grep -r -i "password\|secret\|key\|token" --exclude-dir=.git . || true; then
+              echo "Warning: Found potential secrets in code (review above)"
+            fi
+            
+            echo "Security scan completed ✅"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        {{- include "ci-pipeline-template.securityScanResources" . | nindent 8 }}
+
+    - name: buildkit-build
+      inputs:
+        parameters:
+          - name: context_path
+          - name: dockerfile
+          - name: image_name
+          - name: image_tag
+          - name: github_username
+      container:
+        # Use readiness probe to ensure BuildKit is ready
+        {{- include "ci-pipeline-template.buildkitBuildReadinessProbe" . | nindent 8 }}
+        image: {{ include "ci-pipeline-template.buildkitBuildImage" . }}
+        workingDir: /workspace{{`{{inputs.parameters.context_path}}`}}
+        {{- include "ci-pipeline-template.buildkitBuildEnv" . | nindent 8 }}
+        command: [sh, -c]
+        args:
+          - |
+            set -euo pipefail
+            echo "==== Setting up GHCR Authentication ===="
+            
+            if [ -f /github-token/token ]; then
+              mkdir -p /tmp/.docker
+              TOKEN=$(cat /github-token/token)
+              
+              # Create Docker config for GHCR authentication
+              cat > /tmp/.docker/config.json << EOF
+            {
+              "auths": {
+                "ghcr.io": {
+                  "auth": "$(echo -n "{{`{{inputs.parameters.github_username}}`}}:$TOKEN" | base64 -w 0)"
+                }
+              }
+            }
+            EOF
+              echo "Authentication configured for ghcr.io ✅"
+            else
+              echo "ERROR: GitHub token not found!"
+              exit 1
+            fi
+            
+            echo "==== Building with BuildKit ===="
+            
+            # Set up caching
+            CACHE_FROM="--import-cache type=registry,ref={{`{{inputs.parameters.image_name}}`}}:buildcache"
+            CACHE_TO="--export-cache type=registry,ref={{`{{inputs.parameters.image_name}}`}}:buildcache,mode=max"
+            
+            # Build and push image
+            buildctl-daemonless.sh build \
+              --frontend dockerfile.v0 \
+              --local context=. \
+              --local dockerfile=. \
+              --opt filename={{`{{inputs.parameters.dockerfile}}`}} \
+              $CACHE_FROM \
+              $CACHE_TO \
+              --output type=image,name={{`{{inputs.parameters.image_name}}`}}:{{`{{inputs.parameters.image_tag}}`}},push=true,oci-mediatypes=true \
+              2>&1 | tee /tmp/buildkit.log
+            
+            # Extract image reference
+            IMAGE_REF=$(grep -o 'ghcr\.io/[^@]*@sha256:[a-f0-9]\{64\}' /tmp/buildkit.log | head -1 || echo "")
+            
+            if [ -z "$IMAGE_REF" ]; then
+              echo "Warning: Could not extract SHA reference, using tag-based reference"
+              IMAGE_REF="{{`{{inputs.parameters.image_name}}`}}:{{`{{inputs.parameters.image_tag}}`}}"
+            fi
+            
+            echo "$IMAGE_REF" > /tmp/image-ref.txt
+            echo "Built image: $IMAGE_REF ✅"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: buildkit-cache
+            mountPath: /var/lib/buildkit
+          - name: github-token
+            mountPath: /github-token
+            readOnly: true
+        {{- include "ci-pipeline-template.buildkitBuildSecurityContext" . | nindent 8 }}
+        {{- include "ci-pipeline-template.buildkitBuildResources" . | nindent 8 }}
+      outputs:
+        parameters:
+          - name: image-ref
+            valueFrom:
+              path: /tmp/image-ref.txt
+
+    - name: run-tests
+      inputs:
+        parameters:
+          - name: image_ref
+          - name: test_command
+      container:
+        image: "{{`{{inputs.parameters.image_ref}}`}}"
+        workingDir: /usr/src/myapp
+        command: [sh, -c]
+        args:
+          - |
+            set -euo pipefail
+            echo "==== Running Application Tests ===="
+            
+            echo "Ruby version: $(ruby --version)"
+            echo "Bundle version: $(bundle --version)"
+            
+            # Ensure dependencies are installed
+            bundle check || bundle install --jobs=4 --retry=3
+            
+            # Run tests
+            echo "Executing: {{`{{inputs.parameters.test_command}}`}}"
+            {{`{{inputs.parameters.test_command}}`}}
+            
+            echo "Tests completed successfully ✅"
+        {{- include "ci-pipeline-template.runTestsEnv" . | nindent 8 }}
+        {{- include "ci-pipeline-template.runTestsResources" . | nindent 8 }}
+
+    - name: tag-as-latest
+      inputs:
+        parameters:
+          - name: image_name
+          - name: source_tag
+          - name: github_username
+      volumes:
+        - name: github-token
+          secret:
+            secretName: {{ include "ci-pipeline-template.githubSecretName" . }}
+      container:
+        image: {{ include "ci-pipeline-template.tagLatestImage" . }}
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -euo pipefail
+            echo "==== Tagging image as latest ===="
+            
+            if [ -f /github-token/token ]; then
+              TOKEN=$(cat /github-token/token)
+              
+              # Extract repository name from image name
+              REPO_NAME=$(echo "{{`{{inputs.parameters.image_name}}`}}" | sed 's|ghcr.io/||')
+              
+              # Get the source image manifest
+              MANIFEST=$(curl -s -H "Authorization: Bearer $TOKEN" \
+                -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                "https://ghcr.io/v2/$REPO_NAME/manifests/{{`{{inputs.parameters.source_tag}}`}}")
+              
+              # Tag as latest
+              curl -X PUT -H "Authorization: Bearer $TOKEN" \
+                -H "Content-Type: application/vnd.docker.distribution.manifest.v2+json" \
+                -d "$MANIFEST" \
+                "https://ghcr.io/v2/$REPO_NAME/manifests/latest"
+              
+              echo "Successfully tagged {{`{{inputs.parameters.image_name}}`}}:{{`{{inputs.parameters.source_tag}}`}} as latest ✅"
+            else
+              echo "ERROR: GitHub token not found!"
+              exit 1
+            fi
+        volumeMounts:
+          - name: github-token
+            mountPath: /github-token
+            readOnly: true
+        {{- include "ci-pipeline-template.tagLatestResources" . | nindent 8 }}

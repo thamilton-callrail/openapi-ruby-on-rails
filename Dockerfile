@@ -1,4 +1,4 @@
-FROM ruby:3.0-alpine
+FROM ruby:3.1-alpine
 
 ENV BUILD_PACKAGES="curl-dev ruby-dev build-base" \
     DEV_PACKAGES="zlib-dev libxml2-dev libxslt-dev tzdata yaml-dev sqlite-dev" \
@@ -9,13 +9,18 @@ RUN apk update && \
     apk add --no-cache --update\
     $BUILD_PACKAGES \
     $DEV_PACKAGES \
-    $RUBY_PACKAGES && \
+    $RUBY_PACKAGES \
+    gcompat && \
     mkdir -p /usr/src/myapp
 
 WORKDIR /usr/src/myapp
 
 COPY Gemfile ./
-RUN gem install bundler
+# Ruby 3.1+ includes bundler by default
+RUN bundler --version
+RUN bundle config set --local force_ruby_platform true
+RUN bundle config set --local build.sqlite3 --with-cflags=-O2
+RUN bundle config set --local build.sqlite3 --with-cflags=-O2
 RUN bundle config build.nokogiri --use-system-libraries && \
     bundle install --jobs=4 --retry=10 && \
     bundle clean --force

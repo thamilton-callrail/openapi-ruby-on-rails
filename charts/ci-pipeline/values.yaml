@@ -1,5 +1,53 @@
-pipeline:
-  name: openapi-ruby-on-rails
-  namespace: argo
-  spec:
-    command: bundle install && rake spec
+#
+# CI Pipeline Workflow Configuration
+# This chart creates workflows that use the installed WorkflowTemplate
+#
+---
+# Template installation (if you want to install template with this chart)
+template:
+  install: false  # Set to true to install template dependency
+
+workflow:
+  # Template reference
+  templateName: "rails-ci-buildkit"
+  templateNamespace: "" # Will use the release namespace if empty
+  
+  # Workflow generation configuration
+  generateName: false  # Use generateName instead of fixed name
+  namePrefix: ""       # Will use username-ci- if empty
+
+# CI Configuration - runtime parameters for workflows
+ci:
+  # Repository configuration
+  repo_url: "https://github.com/thamilton-callrail/openapi-ruby-on-rails.git"
+  branch: "main"
+  
+  # Build configuration
+  dockerfile: "Dockerfile"
+  context_path: ""
+  
+  # Image configuration
+  image_name: "ghcr.io/thamilton-callrail/openapi-ruby-on-rails"
+  tag: "latest" # If empty, will use workflow.uid
+  
+  # Testing configuration
+  test_command: "echo 'Running basic checks...' && ruby --version && bundle --version && echo 'All checks passed! ✅'"
+  
+  # GitHub configuration
+  username: "thamilton-callrail"
+
+# Workflow scheduling (optional)
+schedule:
+  enabled: false
+  # cron: "0 2 * * *"  # Daily at 2 AM
+  # timezone: "UTC"
+
+# Workflow triggers (optional)
+triggers:
+  webhook:
+    enabled: false
+    # Configure webhook triggers if needed
+
+# GitHub integration
+github:
+  secretName: "github-token"

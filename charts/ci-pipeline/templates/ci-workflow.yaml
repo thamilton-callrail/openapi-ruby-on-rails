@@ -1,0 +1,24 @@
+#
+# CI Workflow Instance
+# This creates a workflow that uses the pre-installed WorkflowTemplate
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+{{- if .Values.workflow.generateName }}
+  generateName: {{ .Values.ci.username }}-ci-
+{{- else }}
+  name: {{ .Values.ci.username }}-ci-workflow
+{{- end }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ci-pipeline.labels" . | nindent 4 }}
+    workflow-type: "ci-pipeline"
+  annotations:
+    {{- include "ci-pipeline.annotations" . | nindent 4 }}
+spec:
+  workflowTemplateRef:
+    name: {{ include "ci-pipeline.workflowTemplateName" . }}
+  arguments:
+    parameters:
+      {{- include "ci-pipeline.workflowParameters" . | nindent 6 }}

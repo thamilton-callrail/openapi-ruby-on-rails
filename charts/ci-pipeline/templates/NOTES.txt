@@ -1,80 +1,241 @@
 
-# Argo CI Pipeline Chart: Quick Start & Developer Guide
+# 🚀 CI Pipeline Workflow Successfully Deployed!
 
-## 🚀 What does this chart do?
-This Helm chart deploys an [Argo Workflow](https://argoproj.github.io/argo-workflows/) that clones a repo, builds a Docker image, and (optionally) runs tests. It is designed for CI/CD pipelines that build and test container images.
-
----
-
-## 🏁 Quick Start
-
-1. **Install Argo Workflows** (if not already):
-   https://argo-workflows.readthedocs.io/en/stable/quick-start/
-
-2. **Install this chart:**
-   ```sh
-   helm install my-ci-pipeline . 
-   # or upgrade:
-   helm upgrade --install my-ci-pipeline .
-   ```
-
-3. **Trigger a workflow:**
-   ```sh
-   kubectl create -f <(helm template my-ci-pipeline .)
-   # or use Argo CLI:
-   argo submit -n {{ .Values.pipeline.namespace }} <(helm template my-ci-pipeline .)
-   ```
+## 📋 Deployment Summary
+- **Release**: {{ .Release.Name }}
+- **Namespace**: {{ .Release.Namespace }}
+- **Chart**: {{ .Chart.Name }}-{{ .Chart.Version }}
+- **Workflow Template**: {{ include "ci-pipeline.workflowTemplateName" . }}
+- **Repository**: {{ include "ci-pipeline.githubUrl" . }}
+- **Branch**: {{ .Values.ci.branch }}
 
 ---
 
-## 🔧 Configuration
+## ✅ Workflow Deployment Complete
 
-Key values in `values.yaml`:
+Your CI pipeline workflow has been created and is ready to execute!
 
-| Value | Description |
-|-------|-------------|
-| `pipeline.name` | Name of the workflow |
-| `pipeline.namespace` | Namespace to run in |
-| `pipeline.repo` | GitHub repo to clone (e.g. `callrail/promptus`) |
-| `pipeline.build.image` | Builder image (default: moby/buildkit) |
-| `pipeline.build.output` | Output image name |
-| `pipeline.spec.command` | Test/build command to run |
+### 🔧 Workflow Configuration:
+- **Image Target**: {{ .Values.ci.image_name }}
+- **GitHub User**: {{ .Values.ci.username }}
+- **Test Command**: {{ .Values.ci.test_command }}
+- **Dockerfile**: {{ .Values.ci.dockerfile }}
 
 ---
 
-## 🐳 How to see your built image
+## 🎯 Quick Actions
 
-The workflow will build and push an image to the registry defined in `pipeline.build.output`.
+### 1. Check Workflow Status
+```bash
+# List all workflows in namespace
+kubectl get workflows -n {{ .Release.Namespace }}
 
-Check the Argo UI or run:
-```sh
-argo get -n {{ .Values.pipeline.namespace }} $(argo list -n {{ .Values.pipeline.namespace }} | grep {{ .Values.pipeline.name }} | head -1 | awk '{print $1}')
+# Watch your specific workflow
+kubectl get workflows -l workflow-type=ci-pipeline -n {{ .Release.Namespace }} -w
+```
+
+### 2. View Workflow Details
+```bash
+# Get the latest workflow
+WORKFLOW=$(kubectl get workflows -l workflow-type=ci-pipeline -n {{ .Release.Namespace }} -o name | head -1)
+kubectl describe $WORKFLOW -n {{ .Release.Namespace }}
+```
+
+### 3. Check Workflow Logs
+```bash
+# Get workflow pods
+kubectl get pods -l workflows.argoproj.io/workflow -n {{ .Release.Namespace }}
+
+# View specific step logs
+kubectl logs <pod-name> -n {{ .Release.Namespace }} -c main
+```
+
+### 4. Access Argo UI
+```bash
+# Start port forwarding (if Argo UI is installed)
+kubectl port-forward svc/argo-server -n argo 8080:2746
+
+# Open browser to: http://localhost:8080
+# Use token from: kubectl create token argo-admin -n argo --duration=24h
 ```
 
 ---
 
-## 🧪 How to run tests
+## 🔄 Submit Additional Workflows
 
-The test step is defined in `pipeline.spec.command` in your `values.yaml`.
+### Manual Workflow Submission
+```bash
+# Create a new workflow instance
+kubectl create -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: {{ include "ci-pipeline.workflowName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    workflow-type: ci-pipeline-manual
+spec:
+  workflowTemplateRef:
+    name: {{ include "ci-pipeline.workflowTemplateName" . }}
+  arguments:
+    parameters:
+      {{- include "ci-pipeline.workflowParameters" . | nindent 6 }}
+EOF
+```
+
+### Different Branch Build
+```bash
+kubectl create -f - <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: {{ include "ci-pipeline.workflowName" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  workflowTemplateRef:
+    name: {{ include "ci-pipeline.workflowTemplateName" . }}
+  arguments:
+    parameters:
+      - name: repo_url
+        value: {{ include "ci-pipeline.githubUrl" . | quote }}
+      - name: branch
+        value: "feature-branch"  # Change this to your branch
+      - name: image_name
+        value: {{ .Values.ci.image_name | quote }}
+      - name: github_username
+        value: {{ .Values.ci.username | quote }}
+      # ... other parameters
+EOF
+```
 
 ---
 
-## 🛠️ Troubleshooting
+## 🐳 Your CI Pipeline Features
 
-- **Workflow stuck?** Check pod logs:
-  ```sh
-  kubectl get pods -n {{ .Values.pipeline.namespace }}
-  kubectl logs <pod-name> -n {{ .Values.pipeline.namespace }}
-  ```
-- **Image not building?** Check the buildkit step logs in Argo UI.
-- **Secrets:** Make sure `git-ssh-key`, `github-token-secret`, and `sidekiqpro-auth-secret` exist in the namespace.
-
----
-
-## 📚 Resources
-- [Argo Workflows Docs](https://argoproj.github.io/argo-workflows/)
-- [Helm Docs](https://helm.sh/docs/)
+✅ **Template-Based** - Uses pre-installed WorkflowTemplate for consistency  
+✅ **BuildKit Integration** - Rootless Docker builds without DIND  
+✅ **GitHub Container Registry** - Automated image pushing to GHCR  
+✅ **Parallel Execution** - Security scan runs parallel with builds  
+✅ **Comprehensive Testing** - Full test suite execution  
+✅ **Cache Optimization** - Registry-based build caching  
+✅ **Security Scanning** - Built-in vulnerability detection  
 
 ---
 
-Happy shipping! 🚢
+## 📊 Built Images Available At:
+- **Registry**: {{ .Values.ci.image_name }}
+- **Tags**: `latest` and unique workflow IDs
+- **Latest Image**: `{{ .Values.ci.image_name }}:latest`
+
+---
+
+## �️ Management Commands
+
+### Update Workflow Configuration
+```bash
+helm upgrade {{ .Release.Name }} ./ci-pipeline -n {{ .Release.Namespace }}
+```
+
+### Delete All Workflows
+```bash
+kubectl delete workflows -l workflow-type=ci-pipeline -n {{ .Release.Namespace }}
+```
+
+### Check Template Status
+```bash
+kubectl get workflowtemplate {{ include "ci-pipeline.workflowTemplateName" . }} -n {{ .Release.Namespace }}
+```
+
+---
+
+## � Troubleshooting
+
+### Check Workflow Events
+```bash
+kubectl get events --field-selector involvedObject.kind=Workflow -n {{ .Release.Namespace }}
+```
+
+### Verify GitHub Secret
+```bash
+kubectl get secret {{ include "ci-pipeline.githubSecretName" . }} -n {{ .Release.Namespace }}
+kubectl describe secret {{ include "ci-pipeline.githubSecretName" . }} -n {{ .Release.Namespace }}
+```
+
+### Check Template Reference
+```bash
+kubectl describe workflowtemplate {{ include "ci-pipeline.workflowTemplateName" . }} -n {{ .Release.Namespace }}
+```
+
+### Debug Failed Workflows
+```bash
+# Get failed workflows
+kubectl get workflows -l workflow-type=ci-pipeline --field-selector status.phase=Failed -n {{ .Release.Namespace }}
+
+# Get detailed failure info
+kubectl describe workflow <failed-workflow-name> -n {{ .Release.Namespace }}
+```
+
+---
+
+## 📈 Monitoring & Metrics
+
+### Watch Workflow Progress
+```bash
+# Watch all workflows
+kubectl get workflows -w -n {{ .Release.Namespace }}
+
+# Monitor resource usage
+kubectl top pods -l workflows.argoproj.io/workflow -n {{ .Release.Namespace }}
+```
+
+### Check Build History
+```bash
+# List recent workflows
+kubectl get workflows -l workflow-type=ci-pipeline --sort-by=.metadata.creationTimestamp -n {{ .Release.Namespace }}
+
+# Check successful builds
+kubectl get workflows -l workflow-type=ci-pipeline --field-selector status.phase=Succeeded -n {{ .Release.Namespace }}
+```
+
+---
+
+## 📚 Integration Examples
+
+### Webhook Integration
+Set up GitHub webhooks to trigger workflows on push:
+```yaml
+# Add to your values.yaml
+triggers:
+  webhook:
+    enabled: true
+```
+
+### Scheduled Builds
+Configure periodic builds:
+```yaml
+# Add to your values.yaml  
+schedule:
+  enabled: true
+  cron: "0 2 * * *"  # Daily at 2 AM
+```
+
+---
+
+## 📖 Documentation & Resources
+
+- **Argo Workflows**: https://argoproj.github.io/argo-workflows/
+- **Workflow Templates**: https://argoproj.github.io/argo-workflows/workflow-templates/
+- **BuildKit**: https://github.com/moby/buildkit
+- **GitHub Container Registry**: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry
+
+---
+
+## 🎉 Current Workflow Status
+
+{{- if .Values.workflow.generateName }}
+Your workflow will be created with a unique name starting with `{{ include "ci-pipeline.workflowName" . }}`
+{{- else }}
+Your workflow is named: `{{ include "ci-pipeline.workflowName" . }}`
+{{- end }}
+
+**Pipeline is ready to build!** 🏗️✨

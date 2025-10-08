@@ -1,0 +1,128 @@
+# 🛠️ CI Pipeline Template Successfully Deployed!
+
+## 📋 Deployment Summary
+- **Release**: {{ .Release.Name }}
+- **Namespace**: {{ .Release.Namespace }}
+- **Chart**: {{ .Chart.Name }}-{{ .Chart.Version }}
+- **Template Name**: {{ include "ci-pipeline-template.templateName" . }}
+
+---
+
+## ✅ Template Installation Complete
+
+The **{{ include "ci-pipeline-template.templateName" . }}** WorkflowTemplate has been installed and is ready to be used by CI pipeline workflows.
+
+### 🔧 Template Configuration:
+- **Default Repository**: {{ .Values.template.defaultParameters.repo_url }}
+- **Default Branch**: {{ .Values.template.defaultParameters.branch }}
+- **Default Image**: {{ .Values.template.defaultParameters.image_name }}
+- **GitHub Username**: {{ include "ci-pipeline-template.githubUsername" . }}
+
+### 📦 Resource Configuration:
+- **Workspace Volume**: {{ include "ci-pipeline-template.workspaceVolumeSize" . }}
+- **BuildKit Cache**: {{ include "ci-pipeline-template.buildkitCacheVolumeSize" . }}
+- **BuildKit CPU Limit**: {{ .Values.template.steps.buildkitBuild.resources.limits.cpu }}
+- **BuildKit Memory Limit**: {{ .Values.template.steps.buildkitBuild.resources.limits.memory }}
+
+---
+
+## 🎯 Next Steps
+
+### 1. Verify Template Installation
+```bash
+kubectl get workflowtemplate {{ include "ci-pipeline-template.templateName" . }} -n {{ .Release.Namespace }}
+```
+
+### 2. Install CI Pipeline Chart
+Now that the template is installed, you can deploy the CI pipeline chart that will use this template:
+
+```bash
+# Update your ci-pipeline values.yaml to reference this template
+helm install my-ci-pipeline ./ci-pipeline -n {{ .Release.Namespace }}
+```
+
+### 3. Check Template Details
+```bash
+kubectl describe workflowtemplate {{ include "ci-pipeline-template.templateName" . }} -n {{ .Release.Namespace }}
+```
+
+---
+
+## 🔄 Template Features
+
+✅ **Modular Design** - Reusable template for multiple CI workflows  
+✅ **GitHub Integration** - Automated cloning and authentication  
+✅ **BuildKit Builds** - Rootless Docker builds with caching  
+✅ **Security Scanning** - Dockerfile linting and basic security checks  
+✅ **Parallel Execution** - Optimized task dependencies  
+✅ **Resource Management** - Configurable CPU/memory limits  
+✅ **Auto-cleanup** - TTL-based workflow cleanup  
+
+---
+
+## 🛠️ Template Parameters
+
+The template accepts the following parameters when used by workflows:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `repo_url` | {{ .Values.template.defaultParameters.repo_url }} | Git repository URL |
+| `branch` | {{ .Values.template.defaultParameters.branch }} | Git branch to build |
+| `dockerfile` | {{ .Values.template.defaultParameters.dockerfile }} | Dockerfile name |
+| `context_path` | {{ .Values.template.defaultParameters.context_path }} | Build context path |
+| `image_name` | {{ .Values.template.defaultParameters.image_name }} | Container image name |
+| `image_tag` | `{{`{{workflow.uid}}`}}` | Image tag (auto-generated) |
+| `test_command` | {{ .Values.template.defaultParameters.test_command | quote }} | Test command to run |
+| `github_username` | {{ include "ci-pipeline-template.githubUsername" . }} | GitHub username |
+
+---
+
+## 📚 Management Commands
+
+### Update Template
+```bash
+helm upgrade {{ .Release.Name }} ./ci-pipeline-template -n {{ .Release.Namespace }}
+```
+
+### Remove Template
+```bash
+helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+```
+
+### View Template Logs
+```bash
+kubectl logs -l app.kubernetes.io/name={{ include "ci-pipeline-template.name" . }} -n {{ .Release.Namespace }}
+```
+
+---
+
+## 🔍 Troubleshooting
+
+### Check Template Status
+```bash
+kubectl get workflowtemplate -n {{ .Release.Namespace }}
+```
+
+### Verify GitHub Secret
+```bash
+kubectl get secret {{ include "ci-pipeline-template.githubSecretName" . }} -n {{ .Release.Namespace }}
+```
+
+### Check RBAC Permissions
+```bash
+kubectl auth can-i create workflows --as=system:serviceaccount:{{ .Release.Namespace }}:default -n {{ .Release.Namespace }}
+```
+
+---
+
+## 📖 Documentation Links
+
+- **Argo Workflows**: https://argoproj.github.io/argo-workflows/
+- **WorkflowTemplates**: https://argoproj.github.io/argo-workflows/workflow-templates/
+- **BuildKit**: https://github.com/moby/buildkit
+- **GitHub Container Registry**: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry
+
+---
+
+**Template ready for use!** 🚀  
+Install the CI pipeline chart next to start running workflows.
