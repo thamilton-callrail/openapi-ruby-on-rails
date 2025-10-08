@@ -13,10 +13,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /usr/src/myapp
 
+EXPOSE 3000
+
 WORKDIR /usr/src/myapp
 
 COPY Gemfile ./
-# Ruby 3.1+ includes bundler by default
+
 RUN bundler --version
 RUN bundle config set --local force_ruby_platform true
 RUN bundle config set --local build.sqlite3 --with-cflags=-O2
@@ -31,4 +33,4 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-CMD ["bin/rails", "s", "-b", "0.0.0.0"]
+CMD ["bin/rails", "s", "-b", "0.0.0.0", "-p", "3000"]
